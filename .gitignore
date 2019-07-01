@@ -1,0 +1,11 @@
+Build/
+IL2CPPBuild/
+Library/
+Logs/
+obj/
+Temp/
+.vs/
+.vscode/
+.rider/
+*.csproj
+*.sln

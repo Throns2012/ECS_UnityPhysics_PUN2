@@ -1,0 +1,21 @@
+<linker>
+
+<assembly fullname="Unity.Collections" preserve="all" />
+<assembly fullname="Unity.Entities" preserve="all" />
+<assembly fullname="Unity.Entities.Hybrid" preserve="all" />
+<assembly fullname="Unity.Entities.PerformanceTests" preserve="all" />
+<assembly fullname="Unity.Entities.Properties" preserve="all" />
+<assembly fullname="Unity.Entities.StaticTypeRegistry" preserve="all" />
+<assembly fullname="Unity.Transforms" preserve="all" />
+<assembly fullname="Unity.Transforms.Hybrid" preserve="all" />
+<assembly fullname="Unity.Jobs" preserve="all" />
+<assembly fullname="Unity.ZeroPlayer" preserve="all" />
+<assembly fullname="Unity.ZeroJobs" preserve="all" />
+<assembly fullname="Unity.Rendering.Hybrid" preserve="all" />
+<assembly fullname="Unity.Mathematics" preserve="all" />
+<assembly fullname="Unity.Properties" preserve="all" />
+<assembly fullname="Unity.Burst" preserve="all" />
+<assembly fullname="Unity.Properties.Codegen" preserve="all" />
+<assembly fullname="Unity.Physics" preserve="all" />
+<assembly fullname="Unity.Physics.Authoring" preserve="all" />
+</linker>
