@@ -23,12 +23,13 @@ MonoBehaviour:
     Port: 0
     Protocol: 0
     EnableLobbyStatistics: 0
-    NetworkLogging: 1
+    NetworkLogging: 0
   StartInOfflineMode: 0
   PunLogging: 0
   EnableSupportLogger: 0
   RunInBackground: 1
   RpcList:
   - OrderMoveCommandInternal
+  - SyncInternal
   DisableAutoOpenWizard: 1
   ShowSettings: 1

@@ -16,6 +16,7 @@ namespace Assets.MyFolder.Scripts
             _queryMoveCommand = GetEntityQuery(new[]
             {
                 ComponentType.ReadOnly<MoveCommand>(),
+                ComponentType.ReadWrite<DestroyableComponentData>(),
             });
             _query = GetEntityQuery(new[]
             {
@@ -29,6 +30,7 @@ namespace Assets.MyFolder.Scripts
         protected override unsafe void OnUpdate()
         {
             var typeMoveCommand = GetArchetypeChunkComponentType<MoveCommand>(true);
+            var typeDestroyable = GetArchetypeChunkComponentType<DestroyableComponentData>();
             var typeTeamTag = GetArchetypeChunkComponentType<TeamTag>(true);
             var typePhysicsVelocity = GetArchetypeChunkComponentType<PhysicsVelocity>();
             using (var moveCommandChunks = _queryMoveCommand.CreateArchetypeChunkArray(Allocator.TempJob))
@@ -36,23 +38,28 @@ namespace Assets.MyFolder.Scripts
             {
                 foreach (var moveCommandChunk in moveCommandChunks)
                 {
-                    foreach (var moveCommand in moveCommandChunk.GetNativeArray(typeMoveCommand))
+                    var moveCommands = moveCommandChunk.GetNativeArray(typeMoveCommand);
+                    var destroyables = moveCommandChunk.GetNativeArray(typeDestroyable);
+
+                    for (var i = 0; i < moveCommands.Length; i++)
                     {
+                        if (destroyables[i].ShouldDestroy) continue;
+                        destroyables[i] = new DestroyableComponentData() { ShouldDestroy = true };
                         foreach (var velocitiesChunk in velocitiesChunks)
                         {
                             var teamTags = velocitiesChunk.GetNativeArray(typeTeamTag);
                             var physicsVelocities = velocitiesChunk.GetNativeArray(typePhysicsVelocity);
-                            for (var i = 0; i < teamTags.Length; i++)
+                            for (var j = 0; j < teamTags.Length; j++)
                             {
-                                if (teamTags[i].Id != moveCommand.Id) continue;
-                                ref var physicsVelocity = ref UnsafeUtilityEx.ArrayElementAsRef<PhysicsVelocity>(NativeArrayUnsafeUtility.GetUnsafeBufferPointerWithoutChecks(physicsVelocities), i);
-                                physicsVelocity.Linear += moveCommand.DeltaVelocity;
+                                if (teamTags[j].Id != moveCommands[i].Id) continue;
+                                UnsafeUtilityEx
+                                    .ArrayElementAsRef<PhysicsVelocity>(NativeArrayUnsafeUtility.GetUnsafeBufferPointerWithoutChecks(physicsVelocities), j)
+                                    .Linear += moveCommands[i].DeltaVelocity;
                             }
                         }
                     }
                 }
             }
-            EntityManager.DestroyEntity(_queryMoveCommand);
         }
     }
 }
