@@ -14,7 +14,7 @@ public sealed class PhotonViewExtension : PhotonView
     private ComponentType[] _moveCommandComponentTypes;
     private ComponentType[] _synchronizePositionComponentTypes;
 
-    void Start()
+    void OnEnable()
     {
         _moveCommandComponentTypes = new[] { ComponentType.ReadWrite<MoveCommand>(), ComponentType.ReadWrite<DestroyableComponentData>(), };
         _synchronizePositionComponentTypes = new[]
@@ -26,17 +26,29 @@ public sealed class PhotonViewExtension : PhotonView
             ComponentType.ReadWrite<PhysicsVelocity>(),
             ComponentType.ReadWrite<DestroyableComponentData>(),
         };
+    }
 
-        var player = transform.GetChild(0).gameObject;
+    private void OnDestroy()
+    {
+        var manager = World.Active?.EntityManager;
+        if (manager is null) return;
+        if (!manager.Exists(_playerEntity)) return;
+        manager.SetComponentData(_playerEntity, new DestroyableComponentData()
+        {
+            ShouldDestroy = true
+        });
+    }
 
-        _playerEntity = GameObjectConversionUtility.ConvertGameObjectHierarchy(player, World.Active);
+    public Entity InstantiatePlayerPrefab(Entity prefab)
+    {
         var entityManager = World.Active.EntityManager;
+        _playerEntity = entityManager.Instantiate(prefab);
 
         var teamTag = new TeamTag()
         {
             Id = OwnerActorNr,
         };
-        entityManager.AddComponentData(_playerEntity, teamTag);
+        entityManager.SetComponentData(_playerEntity, teamTag);
 
         if (IsMine)
         {
@@ -48,19 +60,8 @@ public sealed class PhotonViewExtension : PhotonView
             var userIdSingleton = new UserIdSingleton(OwnerActorNr);
             entityManager.SetComponentData(idEntity, userIdSingleton);
         }
-        Destroy(player);
-    }
 
-    private void OnDestroy()
-    {
-        if (World.Active is null) return;
-        var manager = World.Active.EntityManager;
-        if (manager is null) return;
-        if (!manager.Exists(_playerEntity)) return;
-        manager.SetComponentData(_playerEntity, new DestroyableComponentData()
-        {
-            ShouldDestroy = true
-        });
+        return _playerEntity;
     }
 
 

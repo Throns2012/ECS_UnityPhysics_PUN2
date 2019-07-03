@@ -7,7 +7,6 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Physics;
 using Unity.Transforms;
-using UnityEngine;
 
 namespace Assets.MyFolder.Scripts.Managers_and_Systems
 {
@@ -19,6 +18,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
         protected override void OnCreate()
         {
             _dstQuery = GetEntityQuery(
+                ComponentType.ReadOnly<PlayerMachineTag>(),
                 ComponentType.Exclude<SyncInfoTag>(),
                 ComponentType.ReadOnly<TeamTag>(),
                 ComponentType.ReadOnly<Translation>(),
@@ -26,6 +26,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
                 ComponentType.ReadOnly<PhysicsVelocity>(),
                 ComponentType.ReadWrite<DestroyableComponentData>());
             _query = GetEntityQuery(
+                ComponentType.Exclude<PlayerMachineTag>(),
                 ComponentType.ReadOnly<SyncInfoTag>(),
                 ComponentType.ReadOnly<TeamTag>(),
                 ComponentType.ReadOnly<Translation>(),
@@ -56,7 +57,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
                 var dstRotations = chunk.GetNativeArray(TypeRotation);
                 var dstVelocities = chunk.GetNativeArray(TypePhysicsVelocity);
 
-                const float ratio = 1f / 16f;
+                const float ratio = 0f / 16f;
 
                 for (int i = 0; i < dstTeamTags.Length; i++)
                 {
