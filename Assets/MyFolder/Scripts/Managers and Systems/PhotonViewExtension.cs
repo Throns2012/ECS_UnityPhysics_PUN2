@@ -1,5 +1,8 @@
-﻿using Assets.MyFolder.Scripts.Basics;
+﻿using System.Collections.Generic;
+using Assets.MyFolder.Scripts.Basics;
+using Assets.MyFolder.Scripts.Utility;
 using Photon.Pun;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Physics;
 using Unity.Rendering;
@@ -10,6 +13,8 @@ using Material = UnityEngine.Material;
 public sealed class PhotonViewExtension : PhotonView
 {
     public Material PlayerMaterial;
+    public IPrefabStorage Storage;
+    private Entity _pointPrefabEntity;
     private Entity _playerEntity;
     private ComponentType[] _moveCommandComponentTypes;
     private ComponentType[] _synchronizePositionComponentTypes;
@@ -26,6 +31,11 @@ public sealed class PhotonViewExtension : PhotonView
             ComponentType.ReadWrite<PhysicsVelocity>(),
             ComponentType.ReadWrite<DestroyableComponentData>(),
         };
+
+        if (!FindComponentOfInterfaceOrClassHelper.FindComponentOfInterfaceOrClass(out Storage)) throw new KeyNotFoundException();
+        Storage.FindPrefab<PlayerMachineTag>(World.Active.EntityManager, out var playerPrefabEntity);
+        InstantiatePlayerPrefab(playerPrefabEntity);
+        Storage.FindPrefab<Point>(World.Active.EntityManager, out _pointPrefabEntity);
     }
 
     private void OnDestroy()
@@ -39,7 +49,7 @@ public sealed class PhotonViewExtension : PhotonView
         });
     }
 
-    public Entity InstantiatePlayerPrefab(Entity prefab)
+    private void InstantiatePlayerPrefab(Entity prefab)
     {
         var entityManager = World.Active.EntityManager;
         _playerEntity = entityManager.Instantiate(prefab);
@@ -57,13 +67,10 @@ public sealed class PhotonViewExtension : PhotonView
             entityManager.SetSharedComponentData(_playerEntity, tmpRenderer);
 
             var idEntity = entityManager.CreateEntity(ComponentType.ReadWrite<UserIdSingleton>());
-            var userIdSingleton = new UserIdSingleton(OwnerActorNr);
+            var userIdSingleton = new UserIdSingleton(OwnerActorNr, _playerEntity);
             entityManager.SetComponentData(idEntity, userIdSingleton);
         }
-
-        return _playerEntity;
     }
-
 
     [PunRPC]
     internal void OrderMoveCommandInternal(Vector3 deltaVelocity, PhotonMessageInfo msgInfo)
@@ -107,5 +114,29 @@ public sealed class PhotonViewExtension : PhotonView
         entityManager.SetComponentData(entity, new Translation { Value = syncInfo.Position });
         entityManager.SetComponentData(entity, new Rotation { Value = syncInfo.Rotation });
         entityManager.SetComponentData(entity, syncInfo.Velocity);
+    }
+
+    [PunRPC]
+    internal unsafe void NextPointPointsInternal(byte[] binaryBytes, PhotonMessageInfo msgInfo)
+    {
+        var count = binaryBytes.Length / (sizeof(Point) + sizeof(Translation));
+        if (count == 0) return;
+        var manager = World.Active?.EntityManager;
+        if (manager is null) return;
+        if (!manager.Exists(_pointPrefabEntity)) return;
+        using (var entities = new NativeArray<Entity>(count, Allocator.Temp, NativeArrayOptions.UninitializedMemory))
+        {
+            manager.Instantiate(_pointPrefabEntity, entities);
+            fixed (byte* ptr = &binaryBytes[0])
+            {
+                var translationPtr = (Translation*)ptr;
+                var pointPtr = (Point*)(translationPtr + count);
+                for (var i = 0; i < entities.Length; i++)
+                {
+                    manager.SetComponentData(entities[i], translationPtr[i]);
+                    manager.SetComponentData(entities[i], pointPtr[i]);
+                }
+            }
+        }
     }
 }

@@ -4,7 +4,6 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
-using Unity.Mathematics;
 using Unity.Physics;
 using Unity.Transforms;
 
@@ -17,22 +16,18 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
         private EntityQuery _dstQuery;
         protected override void OnCreate()
         {
-            _dstQuery = GetEntityQuery(
+            var componentTypes6 = new ComponentType[]
+            {
                 ComponentType.ReadOnly<PlayerMachineTag>(),
-                ComponentType.Exclude<SyncInfoTag>(),
                 ComponentType.ReadOnly<TeamTag>(),
                 ComponentType.ReadOnly<Translation>(),
                 ComponentType.ReadOnly<Rotation>(),
                 ComponentType.ReadOnly<PhysicsVelocity>(),
-                ComponentType.ReadWrite<DestroyableComponentData>());
-            _query = GetEntityQuery(
-                ComponentType.Exclude<PlayerMachineTag>(),
-                ComponentType.ReadOnly<SyncInfoTag>(),
-                ComponentType.ReadOnly<TeamTag>(),
-                ComponentType.ReadOnly<Translation>(),
-                ComponentType.ReadOnly<Rotation>(),
-                ComponentType.ReadOnly<PhysicsVelocity>(),
-                ComponentType.ReadWrite<DestroyableComponentData>());
+                ComponentType.ReadWrite<DestroyableComponentData>()
+            };
+            _dstQuery = GetEntityQuery(componentTypes6);
+            componentTypes6[0] = ComponentType.ReadOnly<SyncInfoTag>();
+            _query = GetEntityQuery(componentTypes6);
             RequireForUpdate(_dstQuery);
             RequireForUpdate(_query);
         }
@@ -79,13 +74,14 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
                             if (teams[index].Id != team) continue;
                             dstTranslations[i] = new Translation
                             {
-                                Value = dstTranslations[i].Value * ratio
-                                         + (translations[index].Value
-                                         + velocities[index].Linear * (CurrentTimestamp - syncInfoTags[index].SentServerTimestamp) * 0.001f) * (1f - ratio)
+                                Value = translations[index].Value
+                                         + velocities[index].Linear
+                                         * (CurrentTimestamp - syncInfoTags[index].SentServerTimestamp)
+                                         * 0.001f
                             };
                             dstRotations[i] = new Rotation()
                             {
-                                Value = math.slerp(dstRotations[i].Value, rotations[index].Value, ratio)
+                                Value = rotations[index].Value.value
                             };
                             dstVelocities[i] = velocities[index];
                             goto LOOPEND;

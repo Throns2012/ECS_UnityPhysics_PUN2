@@ -21,7 +21,7 @@ MonoBehaviour:
     FixedRegion: 
     Server: 
     Port: 0
-    Protocol: 0
+    Protocol: 1
     EnableLobbyStatistics: 0
     NetworkLogging: 0
   StartInOfflineMode: 0
@@ -31,5 +31,6 @@ MonoBehaviour:
   RpcList:
   - OrderMoveCommandInternal
   - SyncInternal
+  - NextPointPointsInternal
   DisableAutoOpenWizard: 1
   ShowSettings: 1

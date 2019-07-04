@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Collections.Generic;
 using Unity.Entities;
 
 namespace Assets.MyFolder.Scripts.Basics
@@ -11,5 +7,7 @@ namespace Assets.MyFolder.Scripts.Basics
     {
         void Add(Entity entity);
         IEnumerable<Entity> Prefabs { get; }
+
+        bool FindPrefab<T>(EntityManager manager, out Entity prefab) where T : struct, IComponentData;
     }
 }

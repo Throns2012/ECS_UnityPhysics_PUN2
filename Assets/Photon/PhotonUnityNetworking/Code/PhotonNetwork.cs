@@ -1113,7 +1113,6 @@ namespace Photon.Pun
 
             NetworkingClient.EnableLobbyStatistics = PhotonNetwork.PhotonServerSettings.AppSettings.EnableLobbyStatistics;
 
-
             if (PhotonServerSettings.AppSettings.IsMasterServerAddress)
             {
                 NetworkingClient.LoadBalancingPeer.SerializationProtocolType = SerializationProtocol.GpBinaryV16;   // this is a workaround to use On Premise Servers, which don't support GpBinaryV18 yet.
@@ -1138,7 +1137,6 @@ namespace Photon.Pun
             {
                 return ConnectToBestCloudServer();
             }
-
             return ConnectToRegion(PhotonServerSettings.AppSettings.FixedRegion);
         }
 

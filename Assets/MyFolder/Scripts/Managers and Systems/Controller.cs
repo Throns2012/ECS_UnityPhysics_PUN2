@@ -13,7 +13,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
         {
             GetEntityQuery(new[]
             {
-                ComponentType.ReadOnly<UserIdSingleton>(),
+                ComponentType.ReadOnly<PlayerMachineTag>(),
             });
         }
 
