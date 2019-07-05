@@ -5,6 +5,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
+using Unity.UIWidgets.ui;
 using UnityEngine;
 
 namespace Assets.MyFolder.Scripts.Managers_and_Systems
@@ -22,7 +23,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
             }
         }
 
-        public float MoveConstant = 20f, RotateConstant = 45f;
+        public float MoveConstant = 20f, RotateConstant = 45f, BandWidth = 10f;
         private Transform _mainCameraTransform;
         private Camera _mainCamera;
 
@@ -50,15 +51,18 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
             }
             if (_cameraTargetEntity == Entity.Null) return;
             _distance = math.distance(EntityManager.GetComponentData<Translation>(_cameraTargetEntity).Value, _mainCameraTransform.position);
+            if (_distance < BandWidth * 2f)
+                _distance = BandWidth * 2f;
         }
 
         protected override void OnUpdate()
         {
             var keyMap = GetSingleton<FollowingCameraControlSingleton>();
-            if (_cameraTargetEntity == Entity.Null) return;
-            var worldPosition = EntityManager.GetComponentData<Translation>(_cameraTargetEntity).Value;
-            var pos = (float3)_mainCameraTransform.position;
-            var normal = math.normalize(pos - worldPosition);
+            if (!EntityManager.Exists(_cameraTargetEntity)) return;
+            var targetPosition = EntityManager.GetComponentData<Translation>(_cameraTargetEntity).Value;
+            var selfPosition = (float3)_mainCameraTransform.position;
+            var distance = math.distance(targetPosition, selfPosition);
+            var normal = math.normalize(selfPosition - targetPosition);
             var theta = math.atan2(normal.x, normal.z);
             var phi = math.asin(normal.y);
 
@@ -70,22 +74,35 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
                 _distance += delta * MoveConstant;
 
             if (Input.GetKey(keyMap.MoveXAxisPlus))
+            {
                 theta -= delta;
+            }
             if (Input.GetKey(keyMap.MoveXAxisMinus))
+            {
                 theta += delta;
+            }
 
             if (Input.GetKey(keyMap.MoveYAxisPlus))
+            {
                 phi += delta;
+            }
             if (Input.GetKey(keyMap.MoveYAxisMinus))
+            {
                 phi -= delta;
+            }
 
 
             var x = math.cos(phi) * math.sin(theta);
             var y = math.sin(phi);
             var z = math.cos(phi) * math.cos(theta);
 
-            _mainCameraTransform.position = (Vector3)worldPosition + new Vector3(x, y, z) * _distance;
-            _mainCameraTransform.LookAt(worldPosition);
+            if (distance < _distance - BandWidth)
+                distance = _distance - BandWidth;
+            else if (distance > _distance + BandWidth)
+                distance = _distance + BandWidth;
+
+            _mainCameraTransform.position = (Vector3)targetPosition + new Vector3(x, y, z) * distance;
+            _mainCameraTransform.LookAt(targetPosition);
         }
     }
 }

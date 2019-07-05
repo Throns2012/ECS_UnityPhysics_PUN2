@@ -1,4 +1,6 @@
-﻿using Assets.MyFolder.Scripts.Basics;
+﻿using System;
+using Assets.MyFolder.Scripts.Basics;
+using Assets.MyFolder.Scripts.Utility;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
@@ -13,16 +15,15 @@ namespace Assets.MyFolder.Scripts
 
         protected override void OnCreate()
         {
-            _queryMoveCommand = GetEntityQuery(new[]
-            {
-                ComponentType.ReadOnly<MoveCommand>(),
-                ComponentType.ReadWrite<DestroyableComponentData>(),
-            });
-            _query = GetEntityQuery(new[]
-            {
-                ComponentType.ReadOnly<TeamTag>(),
-                ComponentType.ReadWrite<PhysicsVelocity>(),
-            });
+            var c3 = ArrayPool.Get<ComponentType>(3);
+            c3[0] = ComponentType.ReadOnly<MoveCommand>();
+            c3[1] = ComponentType.ReadOnly<DateTimeTicksToProcess>();
+            c3[2] = ComponentType.ReadWrite<DestroyableComponentData>();
+            _queryMoveCommand = GetEntityQuery(c3);
+            var c2 = ArrayPool.Get<ComponentType>(2);
+            c2[0] = ComponentType.ReadOnly<TeamTag>();
+            c2[1] = ComponentType.ReadWrite<PhysicsVelocity>();
+            _query = GetEntityQuery(c2);
             RequireForUpdate(_query);
             RequireForUpdate(_queryMoveCommand);
         }
@@ -31,20 +32,22 @@ namespace Assets.MyFolder.Scripts
         {
             var typeMoveCommand = GetArchetypeChunkComponentType<MoveCommand>(true);
             var typeDestroyable = GetArchetypeChunkComponentType<DestroyableComponentData>();
+            var typeTicks = GetArchetypeChunkComponentType<DateTimeTicksToProcess>(true);
             var typeTeamTag = GetArchetypeChunkComponentType<TeamTag>(true);
             var typePhysicsVelocity = GetArchetypeChunkComponentType<PhysicsVelocity>();
+            var currentTicks = DateTime.Now.Ticks;
             using (var moveCommandChunks = _queryMoveCommand.CreateArchetypeChunkArray(Allocator.TempJob))
             using (var velocitiesChunks = _query.CreateArchetypeChunkArray(Allocator.TempJob))
             {
                 foreach (var moveCommandChunk in moveCommandChunks)
                 {
                     var moveCommands = moveCommandChunk.GetNativeArray(typeMoveCommand);
-                    var destroyables = moveCommandChunk.GetNativeArray(typeDestroyable);
-
-                    for (var i = 0; i < moveCommands.Length; i++)
+                    var destroys = moveCommandChunk.GetNativeArray(typeDestroyable);
+                    var ticks = moveCommandChunk.GetNativeArray(typeTicks);
+                    for (var i = 0; i < ticks.Length; i++)
                     {
-                        if (destroyables[i].ShouldDestroy) continue;
-                        destroyables[i] = new DestroyableComponentData() { ShouldDestroy = true };
+                        if (ticks[i].Value < currentTicks || destroys[i].ShouldDestroy) continue;
+                        destroys[i] = new DestroyableComponentData() { ShouldDestroy = true };
                         foreach (var velocitiesChunk in velocitiesChunks)
                         {
                             var teamTags = velocitiesChunk.GetNativeArray(typeTeamTag);

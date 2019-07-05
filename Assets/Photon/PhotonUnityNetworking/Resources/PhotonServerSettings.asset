@@ -32,5 +32,6 @@ MonoBehaviour:
   - OrderMoveCommandInternal
   - SyncInternal
   - NextPointPointsInternal
+  - InitializeEverythingInternal
   DisableAutoOpenWizard: 1
   ShowSettings: 1

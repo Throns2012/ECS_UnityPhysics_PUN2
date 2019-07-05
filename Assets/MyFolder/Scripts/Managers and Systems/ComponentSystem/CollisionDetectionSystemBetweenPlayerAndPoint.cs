@@ -7,7 +7,6 @@ using Unity.Entities;
 using Unity.Jobs;
 using Unity.Physics;
 using Unity.Physics.Systems;
-using UnityEngine;
 
 namespace Assets.MyFolder.Scripts.Managers_and_Systems
 {
@@ -34,6 +33,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
             [NativeDisableUnsafePtrRestriction] public int* PointPtr;
             public ComponentDataFromEntity<DestroyableComponentData> DestroyableAccessor;
             [ReadOnly] public ComponentDataFromEntity<Point> PointAccessor;
+
             public void Execute(CollisionEvent ev)
             {
                 Entity point;
@@ -45,11 +45,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
                 if (!DestroyableAccessor.Exists(point) || !PointAccessor.Exists(point) || DestroyableAccessor[point].ShouldDestroy)
                     return;
                 DestroyableAccessor[point] = new DestroyableComponentData() { ShouldDestroy = true };
-#if UNITY_WEBGL && !UNITY_EDITOR
-                *PointPtr += PointAccessor[point].Value;
-#else
                 Interlocked.Add(ref *PointPtr, PointAccessor[point].Value);
-#endif
             }
         }
 

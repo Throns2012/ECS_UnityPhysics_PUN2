@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Assets.MyFolder.Scripts;
 using Assets.MyFolder.Scripts.Basics;
 using Assets.MyFolder.Scripts.Managers_and_Systems;
+using Assets.MyFolder.Scripts.Utility;
 using Photon.Pun;
 using Photon.Realtime;
 using Unity.Collections;
@@ -18,13 +19,13 @@ using Random = Unity.Mathematics.Random;
 public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchronizer, IPrefabStorage, IPointAppearNotifier
 {
     private PhotonViewExtension _view;
-    private List<Entity> _prefabs = new List<Entity>();
-    private object[] _objectsLength1 = new object[1], _objectsLength4 = new object[4];
-    private SyncInfo _syncInfo = new SyncInfo();
+    private readonly List<Entity> _prefabs = new List<Entity>();
 
+    private bool _amIMaster;
     private bool AmIMaster
     {
-        set => World.Active.GetOrCreateSystem<PointAppearSystem>().Enabled = value;
+        get => _amIMaster;
+        set => _amIMaster = World.Active.GetOrCreateSystem<PointAppearSystem>().Enabled = value;
     }
 
     public Vector3 Min, Max;
@@ -34,11 +35,11 @@ public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchroniz
     {
         if (!PhotonNetwork.ConnectUsingSettings()) throw new ApplicationException();
         var world = World.Active;
-        world.GetOrCreateSystem<Controller>().Notifier = this;
+        world.GetOrCreateSystem<ControlPlayerMachineSystem>().Notifier = this;
         world.GetOrCreateSystem<FrameIntervalSyncStarterSystem>().Synchronizer = this;
         world.GetOrCreateSystem<ManualCameraSystem>().MainCamera
-        = world.GetOrCreateSystem<FollowingCameraSystem>().MainCamera
-        = GetComponent<Camera>();
+            = world.GetOrCreateSystem<FollowingCameraSystem>().MainCamera
+            = GetComponent<Camera>();
         var pointAppearSystem = world.GetOrCreateSystem<PointAppearSystem>();
         pointAppearSystem.Notifier = this;
         pointAppearSystem.PointMax = PointMax;
@@ -50,7 +51,8 @@ public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchroniz
 
     public override void OnConnectedToMaster()
     {
-        if (!PhotonNetwork.JoinOrCreateRoom("DEFAULT", new RoomOptions(), TypedLobby.Default)) throw new ApplicationException();
+        if (!PhotonNetwork.JoinOrCreateRoom("DEFAULT", new RoomOptions(), TypedLobby.Default))
+            throw new ApplicationException();
     }
 
     public override void OnJoinedRoom()
@@ -60,8 +62,8 @@ public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchroniz
         var world = World.Active;
         world.GetExistingSystem<FollowingCameraSystem>().View =
             world.GetExistingSystem<FrameIntervalSyncStarterSystem>().View =
-                _view =
-                    instantiatedObj.GetComponent<PhotonViewExtension>();
+            _view =
+            instantiatedObj.GetComponent<PhotonViewExtension>();
         AmIMaster = PhotonNetwork.MasterClient.ActorNumber == _view.OwnerActorNr;
     }
 
@@ -83,30 +85,31 @@ public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchroniz
         return false;
     }
 
-    public void OrderMoveCommand(Vector3 deltaVelocity)
+    public override void OnPlayerEnteredRoom(Player newPlayer)
     {
-        _objectsLength1[0] = deltaVelocity;
-        _view.RPC(nameof(PhotonViewExtension.OrderMoveCommandInternal), RpcTarget.All, _objectsLength1);
+        if (!AmIMaster) return;
+        //_view.RPC(nameof(PhotonViewExtension.InitializeEverythingInternal), newPlayer);
     }
 
-    public override void OnMasterClientSwitched(Player newMasterClient)
+    public override void OnMasterClientSwitched(Player newMasterClient) => AmIMaster = newMasterClient.ActorNumber == _view.OwnerActorNr;
+
+    public void OrderMoveCommand(Vector3 deltaVelocity, DateTime time)
     {
-        if (newMasterClient.ActorNumber == _view.OwnerActorNr)
-            AmIMaster = true;
+        var objects2 = ArrayPool.Get(2);
+        objects2[0] = deltaVelocity;
+        objects2[1] = time.Ticks;
+        _view.OrderMoveCommandInternal(deltaVelocity, time.Ticks, _view.OwnerActorNr);
+        _view.RPC(nameof(PhotonViewExtension.OrderMoveCommandInternal), RpcTarget.Others, objects2);
     }
 
     public void Sync(in Translation position, in Rotation rotation, in PhysicsVelocity velocity)
     {
-        //_objectsLength1[0] = _syncInfo;
-        //_syncInfo.Position = position.Value;
-        //_syncInfo.Rotation = rotation.Value;
-        //_syncInfo.Velocity = velocity;
-        //_view.RPC(nameof(PhotonViewExtension.SyncInternal), RpcTarget.Others, _objectsLength1);
-        _objectsLength4[0] = (Vector3)position.Value;
-        _objectsLength4[1] = (Quaternion)rotation.Value;
-        _objectsLength4[2] = (Vector3)velocity.Linear;
-        _objectsLength4[3] = (Vector3)velocity.Angular;
-        _view.RPC(nameof(PhotonViewExtension.SyncInternal), RpcTarget.All, _objectsLength4);
+        var objects4 = ArrayPool.Get(4);
+        objects4[0] = (Vector3)position.Value;
+        objects4[1] = (Quaternion)rotation.Value;
+        objects4[2] = (Vector3)velocity.Linear;
+        objects4[3] = (Vector3)velocity.Angular;
+        _view.RPC(nameof(PhotonViewExtension.SyncInternal), RpcTarget.Others, objects4);
     }
 
     public void Add(Entity entity)
@@ -118,6 +121,7 @@ public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchroniz
 
     public IEnumerable<Entity> Prefabs => _prefabs;
     private byte[] _nextPointBytes = Array.Empty<byte>();
+
     public unsafe void NextPoint(NativeArray<Translation> nextTranslations, NativeArray<Point> nextPoints)
     {
         var byteLength = nextTranslations.Length * (sizeof(Translation) + sizeof(Point));
@@ -129,7 +133,8 @@ public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchroniz
             UnsafeUtility.MemCpy(ptr, nextTranslations.GetUnsafePtr(), sizeof(Translation) * nextTranslations.Length);
             UnsafeUtility.MemCpy(ptr + sizeof(Translation) * nextTranslations.Length, nextPoints.GetUnsafePtr(), sizeof(Point) * nextPoints.Length);
         }
-        _objectsLength1[0] = _nextPointBytes;
-        _view.RPC(nameof(PhotonViewExtension.NextPointPointsInternal), RpcTarget.All, _objectsLength1);
+        var objects1 = ArrayPool.Get(1);
+        objects1[0] = _nextPointBytes;
+        _view.RPC(nameof(PhotonViewExtension.NextPointPointsInternal), RpcTarget.All, objects1);
     }
 }

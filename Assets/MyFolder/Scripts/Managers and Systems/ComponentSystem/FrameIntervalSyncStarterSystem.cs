@@ -1,4 +1,6 @@
-﻿using Assets.MyFolder.Scripts.Basics;
+﻿using System;
+using Assets.MyFolder.Scripts.Basics;
+using Assets.MyFolder.Scriptsics;
 using Photon.Pun;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -14,19 +16,25 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
         public ISynchronizer Synchronizer;
         public PhotonView View;
         private EntityQuery _query;
-        private int _frameCount = 15;
-        private int _frameInterval = -1;
+        private long _nextTicks;
 
         protected override void OnCreate()
         {
             _query = GetEntityQuery(ComponentType.ReadWrite<DestroyableComponentData>(), ComponentType.ReadOnly<TeamTag>(), ComponentType.ReadOnly<PhysicsVelocity>(), ComponentType.ReadOnly<Translation>(), ComponentType.ReadOnly<Rotation>());
+            _nextTicks = DateTime.Now.Ticks;
         }
 
-        protected override unsafe void OnUpdate()
+        protected override void OnUpdate()
+        {
+            var current = DateTime.Now.Ticks;
+            if (current < _nextTicks) return;
+            Synchronize();
+            _nextTicks = ((current / TicksIntervalHelper.IntervalTicks) + 1) * TicksIntervalHelper.IntervalTicks;
+        }
+
+        private unsafe void Synchronize()
         {
             if (Synchronizer is null || View is null) return;
-            if (++_frameInterval != _frameCount) return;
-            _frameInterval = -1;
             var chunks = _query.CreateArchetypeChunkArray(Allocator.TempJob);
             var typePhysicsVelocity = GetArchetypeChunkComponentType<PhysicsVelocity>();
             var typeTranslation = GetArchetypeChunkComponentType<Translation>();

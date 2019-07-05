@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using Assets.MyFolder.Scripts.Basics;
 using Assets.MyFolder.Scripts.Utility;
 using Photon.Pun;
@@ -16,26 +17,34 @@ public sealed class PhotonViewExtension : PhotonView
     public IPrefabStorage Storage;
     private Entity _pointPrefabEntity;
     private Entity _playerEntity;
-    private ComponentType[] _moveCommandComponentTypes;
-    private ComponentType[] _synchronizePositionComponentTypes;
+    private EntityArchetype _moveCommandComponentTypes;
+    private EntityArchetype _synchronizePositionComponentTypes;
 
     void OnEnable()
     {
-        _moveCommandComponentTypes = new[] { ComponentType.ReadWrite<MoveCommand>(), ComponentType.ReadWrite<DestroyableComponentData>(), };
-        _synchronizePositionComponentTypes = new[]
-        {
-            ComponentType.ReadWrite<SyncInfoTag>(),
-            ComponentType.ReadWrite<TeamTag>(),
-            ComponentType.ReadWrite<Translation>(),
-            ComponentType.ReadWrite<Rotation>(),
-            ComponentType.ReadWrite<PhysicsVelocity>(),
-            ComponentType.ReadWrite<DestroyableComponentData>(),
-        };
+        var manager = World.Active.EntityManager;
+
+        var moveCommandComponentTypes = ArrayPool.Get<ComponentType>(3);
+        moveCommandComponentTypes[0] = ComponentType.ReadWrite<MoveCommand>();
+        moveCommandComponentTypes[1] = ComponentType.ReadWrite<DestroyableComponentData>();
+        moveCommandComponentTypes[2] = ComponentType.ReadWrite<DateTimeTicksToProcess>();
+
+        _moveCommandComponentTypes = manager.CreateArchetype(moveCommandComponentTypes);
+
+        var synchronizePositionComponentTypes = ArrayPool.Get<ComponentType>(6);
+        synchronizePositionComponentTypes[0] = ComponentType.ReadWrite<SyncInfoTag>();
+        synchronizePositionComponentTypes[1] = ComponentType.ReadWrite<TeamTag>();
+        synchronizePositionComponentTypes[2] = ComponentType.ReadWrite<Translation>();
+        synchronizePositionComponentTypes[3] = ComponentType.ReadWrite<Rotation>();
+        synchronizePositionComponentTypes[4] = ComponentType.ReadWrite<PhysicsVelocity>();
+        synchronizePositionComponentTypes[5] = ComponentType.ReadWrite<DestroyableComponentData>();
+
+        _synchronizePositionComponentTypes = manager.CreateArchetype(synchronizePositionComponentTypes);
 
         if (!FindComponentOfInterfaceOrClassHelper.FindComponentOfInterfaceOrClass(out Storage)) throw new KeyNotFoundException();
-        Storage.FindPrefab<PlayerMachineTag>(World.Active.EntityManager, out var playerPrefabEntity);
+        Storage.FindPrefab<PlayerMachineTag>(manager, out var playerPrefabEntity);
         InstantiatePlayerPrefab(playerPrefabEntity);
-        Storage.FindPrefab<Point>(World.Active.EntityManager, out _pointPrefabEntity);
+        Storage.FindPrefab<Point>(manager, out _pointPrefabEntity);
     }
 
     private void OnDestroy()
@@ -72,27 +81,30 @@ public sealed class PhotonViewExtension : PhotonView
         }
     }
 
-    [PunRPC]
-    internal void OrderMoveCommandInternal(Vector3 deltaVelocity, PhotonMessageInfo msgInfo)
+    internal void OrderMoveCommandInternal(Vector3 deltaVelocity, long ticks, int actorNumber)
     {
         var entityManager = World.Active.EntityManager;
         var entity = entityManager.CreateEntity(_moveCommandComponentTypes);
         entityManager.SetComponentData(entity, new MoveCommand()
         {
-            Id = msgInfo.Sender.ActorNumber,
+            Id = actorNumber,
             DeltaVelocity = deltaVelocity,
         });
+        entityManager.SetComponentData(entity, new DateTimeTicksToProcess(ticks));
     }
 
     [PunRPC]
-    internal void SyncInternal(Vector3 position, Quaternion rotation, Vector3 linear, Vector3 angular, PhotonMessageInfo msgInfo)
+    internal void OrderMoveCommandInternal(Vector3 deltaVelocity, long ticks, PhotonMessageInfo msgInfo)
+        => OrderMoveCommandInternal(deltaVelocity, ticks, msgInfo.Sender.ActorNumber);
+
+    internal void SyncInternal(Vector3 position, Quaternion rotation, Vector3 linear, Vector3 angular, int actorNumber, int milliseconds)
     {
         var entityManager = World.Active?.EntityManager;
-        if (entityManager is null || _synchronizePositionComponentTypes is null) return;
+        if (entityManager is null) return;
         var entity = entityManager.CreateEntity(_synchronizePositionComponentTypes);
-        var msgInfoSentServerTimestamp = msgInfo.SentServerTimestamp;
+        var msgInfoSentServerTimestamp = milliseconds;
         entityManager.SetComponentData(entity, new SyncInfoTag { SentServerTimestamp = msgInfoSentServerTimestamp });
-        entityManager.SetComponentData(entity, new TeamTag { Id = msgInfo.Sender.ActorNumber });
+        entityManager.SetComponentData(entity, new TeamTag { Id = actorNumber });
         entityManager.SetComponentData(entity, new Translation { Value = position });
         entityManager.SetComponentData(entity, new Rotation { Value = rotation });
         entityManager.SetComponentData(entity, new PhysicsVelocity
@@ -103,18 +115,8 @@ public sealed class PhotonViewExtension : PhotonView
     }
 
     [PunRPC]
-    internal void SyncInternal(SyncInfo syncInfo, PhotonMessageInfo msgInfo)
-    {
-        var entityManager = World.Active?.EntityManager;
-        if (entityManager is null || _synchronizePositionComponentTypes is null) return;
-        var entity = entityManager.CreateEntity(_synchronizePositionComponentTypes);
-        var msgInfoSentServerTimestamp = msgInfo.SentServerTimestamp;
-        entityManager.SetComponentData(entity, new SyncInfoTag { SentServerTimestamp = msgInfoSentServerTimestamp });
-        entityManager.SetComponentData(entity, new TeamTag { Id = msgInfo.Sender.ActorNumber });
-        entityManager.SetComponentData(entity, new Translation { Value = syncInfo.Position });
-        entityManager.SetComponentData(entity, new Rotation { Value = syncInfo.Rotation });
-        entityManager.SetComponentData(entity, syncInfo.Velocity);
-    }
+    internal void SyncInternal(Vector3 position, Quaternion rotation, Vector3 linear, Vector3 angular, PhotonMessageInfo msgInfo)
+        => SyncInternal(position, rotation, linear, angular, msgInfo.Sender.ActorNumber, msgInfo.SentServerTimestamp);
 
     [PunRPC]
     internal unsafe void NextPointPointsInternal(byte[] binaryBytes, PhotonMessageInfo msgInfo)
@@ -138,5 +140,11 @@ public sealed class PhotonViewExtension : PhotonView
                 }
             }
         }
+    }
+
+    [PunRPC]
+    internal unsafe void InitializeEverythingInternal()
+    {
+
     }
 }

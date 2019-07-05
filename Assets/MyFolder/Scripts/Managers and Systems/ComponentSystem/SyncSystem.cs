@@ -79,7 +79,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
                                          * (CurrentTimestamp - syncInfoTags[index].SentServerTimestamp)
                                          * 0.001f
                             };
-                            dstRotations[i] = new Rotation()
+                            dstRotations[i] = new Rotation
                             {
                                 Value = rotations[index].Value.value
                             };

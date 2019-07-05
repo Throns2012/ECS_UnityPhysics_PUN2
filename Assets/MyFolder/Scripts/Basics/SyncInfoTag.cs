@@ -1,6 +1,4 @@
 ﻿using Unity.Entities;
-using Unity.Mathematics;
-using Unity.Physics;
 
 namespace Assets.MyFolder.Scripts.Basics
 {
