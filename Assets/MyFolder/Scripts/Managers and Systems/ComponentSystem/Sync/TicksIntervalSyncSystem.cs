@@ -1,6 +1,6 @@
 ﻿using System;
 using Assets.MyFolder.Scripts.Basics;
-using Assets.MyFolder.Scriptsics;
+using Assets.MyFolder.Scripts;
 using Photon.Pun;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -11,7 +11,7 @@ using Unity.Transforms;
 namespace Assets.MyFolder.Scripts.Managers_and_Systems
 {
     [AlwaysUpdateSystem]
-    public sealed class FrameIntervalSyncStarterSystem : ComponentSystem
+    public sealed class TicksIntervalSyncSystem : ComponentSystem
     {
         public ISynchronizer Synchronizer;
         public PhotonView View;

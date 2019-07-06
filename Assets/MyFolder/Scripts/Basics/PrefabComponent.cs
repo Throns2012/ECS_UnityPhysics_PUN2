@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Assets.MyFolder.Scripts.Utility;
 using Unity.Entities;
 using UnityEngine;

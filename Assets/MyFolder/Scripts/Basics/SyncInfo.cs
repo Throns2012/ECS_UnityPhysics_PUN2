@@ -2,7 +2,6 @@
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Physics;
-using UnityEngine;
 
 namespace Assets.MyFolder.Scripts.Basics
 {

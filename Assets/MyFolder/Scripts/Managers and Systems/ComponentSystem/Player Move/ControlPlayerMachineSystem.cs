@@ -1,7 +1,8 @@
 ﻿using System;
 using Assets.MyFolder.Scripts.Basics;
 using Assets.MyFolder.Scripts.Utility;
-using Assets.MyFolder.Scriptsics;
+using Assets.MyFolder.Scripts;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
@@ -17,9 +18,12 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
         protected override void OnCreate()
         {
             _nextIssueTicks = DateTime.Now.Ticks + TicksIntervalHelper.IntervalTicks;
-            var c1 = ArrayPool.Get<ComponentType>(1);
-            c1[0] = ComponentType.ReadOnly<PlayerMachineTag>();
+            var c1 = new NativeArray<ComponentType>(1, Allocator.Temp, NativeArrayOptions.UninitializedMemory)
+            {
+                [0] = ComponentType.ReadOnly<PlayerMachineTag>(),
+            };
             GetEntityQuery(c1);
+            c1.Dispose();
         }
 
         protected override void OnUpdate()

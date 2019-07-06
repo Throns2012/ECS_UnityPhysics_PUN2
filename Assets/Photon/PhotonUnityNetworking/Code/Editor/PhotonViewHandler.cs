@@ -12,18 +12,13 @@
 namespace Photon.Pun
 {
 	using System.Collections.Generic;
-	using System.Diagnostics;
-	using System.IO;
+    using System.IO;
 	using UnityEditor;
 	using UnityEngine;
-	using System.Collections;
-	using Debug = UnityEngine.Debug;
+    using Debug = UnityEngine.Debug;
 	using UnityEditor.SceneManagement;
 
-	using Photon.Pun;
-	using Photon.Realtime;
-
-	[InitializeOnLoad]
+    [InitializeOnLoad]
 	public class PhotonViewHandler : EditorWindow
 	{
 		private static bool CheckSceneForStuckHandlers = true;

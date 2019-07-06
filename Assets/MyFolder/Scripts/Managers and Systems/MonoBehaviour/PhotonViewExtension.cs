@@ -1,6 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Assets.MyFolder.Scripts.Basics;
+using Assets.MyFolder.Scripts.Managers_and_Systems;
 using Assets.MyFolder.Scripts.Utility;
 using Photon.Pun;
 using Unity.Collections;
@@ -15,7 +15,8 @@ public sealed class PhotonViewExtension : PhotonView
 {
     public Material PlayerMaterial;
     public IPrefabStorage Storage;
-    private Entity _pointPrefabEntity;
+    public IInitialDeserializer InitialDeserializer;
+    private Entity _nextPointPrefabEntity;
     private Entity _playerEntity;
     private EntityArchetype _moveCommandComponentTypes;
     private EntityArchetype _synchronizePositionComponentTypes;
@@ -44,7 +45,7 @@ public sealed class PhotonViewExtension : PhotonView
         if (!FindComponentOfInterfaceOrClassHelper.FindComponentOfInterfaceOrClass(out Storage)) throw new KeyNotFoundException();
         Storage.FindPrefab<PlayerMachineTag>(manager, out var playerPrefabEntity);
         InstantiatePlayerPrefab(playerPrefabEntity);
-        Storage.FindPrefab<Point>(manager, out _pointPrefabEntity);
+        Storage.FindPrefab<Point, DateTimeTicksToProcess>(manager, out _nextPointPrefabEntity);
     }
 
     private void OnDestroy()
@@ -119,19 +120,21 @@ public sealed class PhotonViewExtension : PhotonView
         => SyncInternal(position, rotation, linear, angular, msgInfo.Sender.ActorNumber, msgInfo.SentServerTimestamp);
 
     [PunRPC]
-    internal unsafe void NextPointPointsInternal(byte[] binaryBytes, PhotonMessageInfo msgInfo)
+    internal unsafe void NextPointsInternal(byte[] binaryBytes)
     {
-        var count = binaryBytes.Length / (sizeof(Point) + sizeof(Translation));
+        var count = (binaryBytes.Length - sizeof(long)) / (sizeof(Point) + sizeof(Translation));
         if (count == 0) return;
         var manager = World.Active?.EntityManager;
         if (manager is null) return;
-        if (!manager.Exists(_pointPrefabEntity)) return;
+        if (!manager.Exists(_nextPointPrefabEntity)) return;
         using (var entities = new NativeArray<Entity>(count, Allocator.Temp, NativeArrayOptions.UninitializedMemory))
         {
-            manager.Instantiate(_pointPrefabEntity, entities);
             fixed (byte* ptr = &binaryBytes[0])
             {
-                var translationPtr = (Translation*)ptr;
+                var dateTimeTicksToProcess = new DateTimeTicksToProcess(*(long*)ptr);
+                manager.SetComponentData(_nextPointPrefabEntity, dateTimeTicksToProcess);
+                manager.Instantiate(_nextPointPrefabEntity, entities);
+                var translationPtr = (Translation*)(ptr + sizeof(long));
                 var pointPtr = (Point*)(translationPtr + count);
                 for (var i = 0; i < entities.Length; i++)
                 {
@@ -143,8 +146,10 @@ public sealed class PhotonViewExtension : PhotonView
     }
 
     [PunRPC]
-    internal unsafe void InitializeEverythingInternal()
+    internal unsafe void InitializeEverythingInternal(byte[] serializedBytes)
     {
-
+        InitialDeserializer.Deserialize(serializedBytes);
     }
+
+
 }

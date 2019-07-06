@@ -1,6 +1,5 @@
 ﻿using System;
 using Assets.MyFolder.Scripts.Basics;
-using Assets.MyFolder.Scripts.Utility;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
@@ -15,15 +14,21 @@ namespace Assets.MyFolder.Scripts
 
         protected override void OnCreate()
         {
-            var c3 = ArrayPool.Get<ComponentType>(3);
-            c3[0] = ComponentType.ReadOnly<MoveCommand>();
-            c3[1] = ComponentType.ReadOnly<DateTimeTicksToProcess>();
-            c3[2] = ComponentType.ReadWrite<DestroyableComponentData>();
+            var c3 = new NativeArray<ComponentType>(3, Allocator.Temp, NativeArrayOptions.UninitializedMemory)
+            {
+                [0] = ComponentType.ReadOnly<MoveCommand>(),
+                [1] = ComponentType.ReadOnly<DateTimeTicksToProcess>(),
+                [2] = ComponentType.ReadWrite<DestroyableComponentData>(),
+            };
             _queryMoveCommand = GetEntityQuery(c3);
-            var c2 = ArrayPool.Get<ComponentType>(2);
-            c2[0] = ComponentType.ReadOnly<TeamTag>();
-            c2[1] = ComponentType.ReadWrite<PhysicsVelocity>();
+            c3.Dispose();
+            var c2 = new NativeArray<ComponentType>(2, Allocator.Temp, NativeArrayOptions.UninitializedMemory)
+            {
+                [0] = ComponentType.ReadOnly<TeamTag>(),
+                [1] = ComponentType.ReadWrite<PhysicsVelocity>(),
+            };
             _query = GetEntityQuery(c2);
+            c2.Dispose();
             RequireForUpdate(_query);
             RequireForUpdate(_queryMoveCommand);
         }

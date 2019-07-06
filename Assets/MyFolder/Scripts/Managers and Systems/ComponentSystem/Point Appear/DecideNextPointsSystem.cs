@@ -10,11 +10,10 @@ using Random = Unity.Mathematics.Random;
 
 namespace Assets.MyFolder.Scripts.Managers_and_Systems
 {
-    public sealed class PointAppearSystem : ComponentSystem
+    public sealed class DecideNextPointsSystem : ComponentSystem
     {
-        private EntityQuery _prefabQuery;
-        private int _frame = 0;
-        private int _frameAppear = 60;
+        private const long Interval = TicksIntervalHelper.IntervalTicks * 4L;
+        private long _nextTicks;
         private int _appearCount = 256;
         private Job job;
         public ref float3 Min => ref job.Min;
@@ -41,7 +40,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
 
         protected override void OnCreate()
         {
-            RequireForUpdate(_prefabQuery = GetEntityQuery(ComponentType.ReadOnly<Prefab>(), ComponentType.ReadWrite<Point>(), ComponentType.ReadWrite<Translation>()));
+            RequireForUpdate(GetEntityQuery(ComponentType.ReadOnly<Prefab>(), ComponentType.ReadWrite<Point>(), ComponentType.ReadWrite<Translation>(), ComponentType.ReadOnly<Disabled>()));
             RequireForUpdate(GetEntityQuery(ComponentType.ReadOnly<PlayerMachineTag>()));
             job = new Job
             {
@@ -59,11 +58,13 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
 
         protected override void OnUpdate()
         {
-            if (++_frame < _frameAppear) return;
-            _frame = 0;
+            var current = DateTime.Now.Ticks;
+            if (current < _nextTicks) return;
+            _nextTicks = ((current / Interval) + 1) * Interval;
+
+            job.Random.InitState((uint)current ^ (uint)(current >> 32));
             job.Schedule(_appearCount, 256).Complete();
-            job.Random.InitState((uint)DateTime.Now.Ticks);
-            Notifier.NextPoint(job.Translations, job.Points);
+            Notifier.NextPoint(job.Translations, job.Points, new DateTime(_nextTicks + Interval * 2));
         }
     }
 }

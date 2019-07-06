@@ -20,7 +20,6 @@
 namespace Photon.Realtime
 {
     using System;
-    using System.Net;
     using System.Collections;
     using System.Collections.Generic;
     using System.Diagnostics;
@@ -31,8 +30,7 @@ namespace Photon.Realtime
     using Debug = UnityEngine.Debug;
     #endif
     #if SUPPORTED_UNITY || NETFX_CORE
-    using Hashtable = ExitGames.Client.Photon.Hashtable;
-    using SupportClass = ExitGames.Client.Photon.SupportClass;
+
     #endif
 
     /// <summary>

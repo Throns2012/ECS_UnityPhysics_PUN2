@@ -5,7 +5,6 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
-using Unity.UIWidgets.ui;
 using UnityEngine;
 
 namespace Assets.MyFolder.Scripts.Managers_and_Systems

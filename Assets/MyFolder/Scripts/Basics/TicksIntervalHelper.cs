@@ -1,4 +1,4 @@
-﻿namespace Assets.MyFolder.Scriptsics
+﻿namespace Assets.MyFolder.Scripts
 {
     public static class TicksIntervalHelper
     {
