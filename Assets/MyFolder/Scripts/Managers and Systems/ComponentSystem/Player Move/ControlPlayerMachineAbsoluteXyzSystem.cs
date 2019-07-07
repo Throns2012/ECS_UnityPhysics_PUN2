@@ -1,7 +1,5 @@
 ﻿using System;
 using Assets.MyFolder.Scripts.Basics;
-using Assets.MyFolder.Scripts.Utility;
-using Assets.MyFolder.Scripts;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -9,7 +7,7 @@ using UnityEngine;
 
 namespace Assets.MyFolder.Scripts.Managers_and_Systems
 {
-    public sealed class ControlPlayerMachineSystem : ComponentSystem
+    public sealed class ControlPlayerMachineAbsoluteXyzSystem : ComponentSystem
     {
         public IMoveNotifier Notifier;
         private float3 _bufferedVelocity;
@@ -70,16 +68,6 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
                 delta.y += 20f;
             delta *= Time.deltaTime;
             return delta;
-        }
-
-        private static bool NoInput(out bool keyW, out bool keyA, out bool keyS, out bool keyD, out bool keyShift)
-        {
-            keyW = Input.GetKey(KeyCode.W) | Input.GetKey(KeyCode.UpArrow);
-            keyA = Input.GetKey(KeyCode.A) | Input.GetKey(KeyCode.LeftArrow);
-            keyS = Input.GetKey(KeyCode.S) | Input.GetKey(KeyCode.DownArrow);
-            keyD = Input.GetKey(KeyCode.D) | Input.GetKey(KeyCode.RightArrow);
-            keyShift = Input.GetKey(KeyCode.LeftShift) | Input.GetKey(KeyCode.RightShift);
-            return !keyW && !keyA && !keyS && !keyD && !keyShift;
         }
     }
 }

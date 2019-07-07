@@ -21,6 +21,9 @@ public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchroniz
     private PhotonViewExtension _view;
     private readonly List<Entity> _prefabs = new List<Entity>();
     private IInitialSerializer _initialSerializer;
+    private readonly object[] _objects1 = ArrayPool.Get(1);
+    private readonly byte[] _bytes25 = ArrayPool.Get<byte>(25);
+    private readonly byte[] _bytes52 = ArrayPool.Get<byte>(52);
 
     private bool _amIMaster;
     private bool AmIMaster
@@ -32,15 +35,22 @@ public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchroniz
     public Vector3 Min, Max;
     public int PointMin, PointMax;
 
-    private bool ExistOthers => PhotonNetwork.CurrentRoom.Players.Count > 1;
+    private bool ExistOthers => (PhotonNetwork.CurrentRoom?.Players?.Count ?? 0) > 1;
 
     private void Start()
     {
         if (!PhotonNetwork.ConnectUsingSettings()) throw new ApplicationException();
 
         var world = World.Active;
-        world.GetOrCreateSystem<ControlPlayerMachineSystem>().Notifier = this;
+
+        world.GetOrCreateSystem<ControlPlayerMachineAbsoluteXyzSystem>().Notifier = this;
+
+        var controlPlayerMachineRelativeToCameraSystem = world.GetOrCreateSystem<ControlPlayerMachineRelativeToCameraSystem>();
+        controlPlayerMachineRelativeToCameraSystem.Notifier = this;
+        controlPlayerMachineRelativeToCameraSystem.Enabled = false;
+
         world.GetOrCreateSystem<TicksIntervalSyncSystem>().Synchronizer = this;
+
         world.GetOrCreateSystem<ManualCameraSystem>().MainCamera
             = world.GetOrCreateSystem<FollowingCameraSystem>().MainCamera
             = GetComponent<Camera>();
@@ -54,9 +64,15 @@ public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchroniz
         pointAppearSystem.Max = confineSystem.Max = Max;
         pointAppearSystem.Min = confineSystem.Min = Min;
 
-        FindPrefab<Point, DestroyableComponentData>(world.EntityManager, out world.GetOrCreateSystem<EnableWhenTimeComesSystem>().CurrentPointPrefab);
+        var manager = world.EntityManager;
+        FindPrefab<Point, DestroyableComponentData>(manager, out var currentPointPrefabEntity);
+        world.GetOrCreateSystem<EnableWhenTimeComesSystem>().CurrentPointPrefab = currentPointPrefabEntity;
 
-        _initialSerializer = world.GetOrCreateSystem<SerializeEverythingSystem>();
+        var serializeEverythingSystem = world.GetOrCreateSystem<SerializeEverythingSystem>();
+        _initialSerializer = serializeEverythingSystem;
+        serializeEverythingSystem.CurrentPointPrefabEntity = currentPointPrefabEntity;
+        FindPrefab<Point, DateTimeTicksToProcess>(manager, out serializeEverythingSystem.NextPointPrefabEntity);
+        FindPrefab<PlayerMachineTag>(manager, out serializeEverythingSystem.PlayerMachinePrefabEntity);
     }
 
     public override void OnConnectedToMaster()
@@ -112,32 +128,36 @@ public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchroniz
     public override void OnPlayerEnteredRoom(Player newPlayer)
     {
         if (!AmIMaster || newPlayer.ActorNumber == _view.OwnerActorNr) return;
-        var objects1 = ArrayPool.Get(1);
-        objects1[0] = _initialSerializer.Serialize();
-        _view.RPC(nameof(PhotonViewExtension.InitializeEverythingInternal), newPlayer, objects1);
+        _objects1[0] = _initialSerializer.Serialize();
+        _view.RPC(nameof(PhotonViewExtension.InitializeEverythingInternal), newPlayer, _objects1);
     }
 
     public override void OnMasterClientSwitched(Player newMasterClient) => AmIMaster = newMasterClient.ActorNumber == _view.OwnerActorNr;
 
-    public void OrderMoveCommand(Vector3 deltaVelocity, DateTime time)
+    public unsafe void OrderMoveCommand(Vector3 deltaVelocity, DateTime time)
     {
-        _view.OrderMoveCommandInternal(deltaVelocity, time.Ticks, _view.OwnerActorNr);
+        fixed (byte* ptr = &_bytes25[0])
+        {
+            *(Vector3*)ptr = deltaVelocity;
+            *(DateTime*)(ptr + sizeof(Vector3)) = time;
+        }
+        _view.OrderMoveCommandInternal(_bytes25, _view.OwnerActorNr);
         if (!ExistOthers) return;
-        var objects2 = ArrayPool.Get(2);
-        objects2[0] = deltaVelocity;
-        objects2[1] = time.Ticks;
-        _view.RPC(nameof(PhotonViewExtension.OrderMoveCommandInternal), RpcTarget.Others, objects2);
+        _objects1[0] = _bytes25;
+        _view.RPC(nameof(PhotonViewExtension.OrderMoveCommandInternal), RpcTarget.Others, _objects1);
     }
 
-    public void Sync(in Translation position, in Rotation rotation, in PhysicsVelocity velocity)
+    public unsafe void Sync(in Translation position, in Rotation rotation, in PhysicsVelocity velocity)
     {
         if (!ExistOthers) return;
-        var objects4 = ArrayPool.Get(4);
-        objects4[0] = (Vector3)position.Value;
-        objects4[1] = (Quaternion)rotation.Value;
-        objects4[2] = (Vector3)velocity.Linear;
-        objects4[3] = (Vector3)velocity.Angular;
-        _view.RPC(nameof(PhotonViewExtension.SyncInternal), RpcTarget.Others, objects4);
+        fixed (byte* ptr = &_bytes52[0])
+        {
+            *(Translation*)ptr = position;
+            *(Rotation*)(ptr + sizeof(Translation)) = rotation;
+            *(PhysicsVelocity*)(ptr + sizeof(Translation) + sizeof(Rotation)) = velocity;
+        }
+        _objects1[0] = _bytes52;
+        _view.RPC(nameof(PhotonViewExtension.SyncInternal), RpcTarget.Others, _objects1);
     }
 
     public void Add(Entity entity)
@@ -165,8 +185,7 @@ public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchroniz
         }
         _view.NextPointsInternal(_nextPointBytes);
         if (!ExistOthers) return;
-        var objects1 = ArrayPool.Get(1);
-        objects1[0] = _nextPointBytes;
-        _view.RPC(nameof(PhotonViewExtension.NextPointsInternal), RpcTarget.Others, objects1);
+        _objects1[0] = _nextPointBytes;
+        _view.RPC(nameof(PhotonViewExtension.NextPointsInternal), RpcTarget.Others, _objects1);
     }
 }

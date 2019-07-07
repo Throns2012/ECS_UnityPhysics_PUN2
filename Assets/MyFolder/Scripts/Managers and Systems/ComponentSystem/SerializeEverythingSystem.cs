@@ -5,21 +5,23 @@ using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Jobs;
-using Unity.Mathematics;
 using Unity.Physics;
 using Unity.Transforms;
 
 namespace Assets.MyFolder.Scripts.Managers_and_Systems
 {
-    public class SerializeEverythingSystem : ComponentSystem, IInitialSerializer
+    public sealed unsafe class SerializeEverythingSystem : ComponentSystem, IInitialSerializer, IInitialDeserializer
     {
+        public Entity PlayerMachinePrefabEntity;
+        public Entity CurrentPointPrefabEntity;
+        public Entity NextPointPrefabEntity;
+
         private EntityQuery _playerMachineQuery;
         private EntityQuery _pointQuery;
         private EntityQuery _pointNextQuery;
 
         protected override void OnCreate()
         {
-            Enabled = false;
             var cs = new NativeArray<ComponentType>(6, Allocator.Temp, NativeArrayOptions.UninitializedMemory)
             {
                 [0] = ComponentType.ReadOnly<PlayerMachineTag>(),
@@ -54,7 +56,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
         protected override void OnUpdate() { }
 
         [BurstCompile]
-        unsafe struct PlayerMachineFillJob : IJob
+        struct PlayerMachineSerializeJob : IJob
         {
             [NativeDisableUnsafePtrRestriction, NativeDisableParallelForRestriction]
             public byte* DestinationPtr;
@@ -94,7 +96,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
         }
 
         [BurstCompile]
-        unsafe struct CurrentPointFillJob : IJob
+        struct CurrentPointSerializeJob : IJob
         {
             [NativeDisableUnsafePtrRestriction, NativeDisableParallelForRestriction]
             public byte* DestinationPtr;
@@ -110,7 +112,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
             {
                 var translationPtr = (Translation*)DestinationPtr;
                 var pointPtr = (Point*)(translationPtr + Count);
-                var linearPtr = (float3*)(pointPtr + Count);
+                var linearPtr = (PhysicsVelocity*)(pointPtr + Count);
 
                 for (var i = 0; i < Chunks.Length; i++)
                 {
@@ -119,7 +121,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
 
                     MemCpyUtility.MemCpy(translationPtr, chunk.GetNativeArray(TypeTranslation));
                     MemCpyUtility.MemCpy(pointPtr, chunk.GetNativeArray(TypePoint));
-                    MemCpyUtility.MemCpyStride(linearPtr, chunk.GetNativeArray(TypePhysicsVelocity));
+                    MemCpyUtility.MemCpy(linearPtr, chunk.GetNativeArray(TypePhysicsVelocity));
 
                     translationPtr += count;
                     pointPtr += count;
@@ -129,7 +131,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
         }
 
         [BurstCompile]
-        unsafe struct NextPointFillJob : IJob
+        struct NextPointSerializeJob : IJob
         {
             [NativeDisableUnsafePtrRestriction, NativeDisableParallelForRestriction]
             public byte* DestinationPtr;
@@ -164,7 +166,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
             }
         }
 
-        public unsafe byte[] Serialize()
+        public byte[] Serialize()
         {
             var TypeTranslation = GetArchetypeChunkComponentType<Translation>(true);
             var TypeRotation = GetArchetypeChunkComponentType<Rotation>(true);
@@ -192,7 +194,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
                 {
                     pointCount += pointChunks[i].Count;
                 }
-                var currentPointByteLength = pointCount * (sizeof(Translation) + sizeof(Point) + sizeof(float3) /* Linear of PhysicsVelocity */);
+                var currentPointByteLength = pointCount * (sizeof(Translation) + sizeof(Point) + sizeof(PhysicsVelocity));
                 inputLength += currentPointByteLength;
 
                 var nextPointCount = 0L;
@@ -213,7 +215,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
                 *(long*)(inputPtr + sizeof(long)) = pointCount;
                 *(long*)(inputPtr + sizeof(long) * 2) = nextPointCount;
 
-                var playerMachineFillJob = new PlayerMachineFillJob()
+                var playerMachineFillJob = new PlayerMachineSerializeJob
                 {
                     Chunks = playerChunks,
                     Count = playerCount,
@@ -224,7 +226,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
                     TypeTeam = TypeTeam,
                 };
                 var job0 = playerMachineFillJob.Schedule();
-                var currentPointFillJob = new CurrentPointFillJob()
+                var currentPointFillJob = new CurrentPointSerializeJob
                 {
                     Chunks = pointChunks,
                     TypePhysicsVelocity = TypePhysicsVelocity,
@@ -234,7 +236,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
                     TypePoint = TypePoint,
                 };
                 var job1 = currentPointFillJob.Schedule();
-                var nextPointFillJob = new NextPointFillJob()
+                var nextPointFillJob = new NextPointSerializeJob
                 {
                     Chunks = nextPointChunks,
                     TypeTranslation = TypeTranslation,
@@ -246,6 +248,13 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
                 var job2 = nextPointFillJob.Schedule();
                 JobHandle.CompleteAll(ref job0, ref job1, ref job2);
             }
+            var answer = Lz4Encode(inputLength, inputPtr);
+            UnsafeUtility.Free(inputPtr, Allocator.TempJob);
+            return answer;
+        }
+
+        private static byte[] Lz4Encode(long inputLength, byte* inputPtr)
+        {
             var neededLength = Lz4Codec.MaximumOutputLength((int)inputLength);
             var outputPtr = (byte*)UnsafeUtility.Malloc(neededLength, 4, Allocator.TempJob);
 
@@ -255,11 +264,141 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
             fixed (byte* answerPtr = &answer[0])
             {
                 *(int*)answerPtr = (int)inputLength;
-                UnsafeUtility.MemCpy(answerPtr, outputPtr, encodedLength);
+                UnsafeUtility.MemCpy(answerPtr + 4, outputPtr, encodedLength);
             }
-            UnsafeUtility.Free(inputPtr, Allocator.TempJob);
             UnsafeUtility.Free(outputPtr, Allocator.TempJob);
             return answer;
+        }
+
+        private static byte[] Encode(long inputLength, byte* inputPtr)
+        {
+            var answer = new byte[inputLength];
+            fixed (byte* answerPtr = &answer[0])
+            {
+                UnsafeUtility.MemCpy(answerPtr, inputPtr, inputLength);
+            }
+            return answer;
+        }
+
+
+        struct DeserializeJob<T> where T : unmanaged, IComponentData
+        {
+            public NativeArray<Entity> Entities;
+            public EntityManager Manager;
+            [NativeDisableUnsafePtrRestriction] public T* Ptr;
+
+            public void Execute()
+            {
+                for (var index = 0; index < Entities.Length; index++)
+                    Manager.SetComponentData(Entities[index], Ptr[index]);
+            }
+        }
+
+        public void Deserialize(byte[] serializedBytes)
+        {
+            byte* outputPtr = Lz4Decode(serializedBytes, Allocator.TempJob);
+            var ptr = outputPtr;
+            var playerCount = *(long*)ptr;
+            ptr += 8;
+            var currentPointCount = *(long*)ptr;
+            ptr += 8;
+            var nextPointCount = *(long*)ptr;
+            ptr += 8;
+            var playerTranslationPtr = (Translation*)ptr;
+            var playerRotationPtr = (Rotation*)(playerTranslationPtr + playerCount);
+            var playerTeamTagPtr = (TeamTag*)(playerRotationPtr + playerCount);
+            var playerPhysicsVelocityPtr = (PhysicsVelocity*)(playerTeamTagPtr + playerCount);
+            var currentPointTranslationPtr = (Translation*)(playerPhysicsVelocityPtr + playerCount);
+            var currentPointPointPtr = (Point*)(currentPointTranslationPtr + currentPointCount);
+            var currentPointPhysicsVelocityPtr = (PhysicsVelocity*)(currentPointPointPtr + currentPointCount);
+            var nextPointTranslationPtr = (Translation*)(currentPointPhysicsVelocityPtr + currentPointCount);
+            var nextPointPointPtr = (Point*)(nextPointTranslationPtr + nextPointCount);
+            var nextPointTicksPtr = (DateTimeTicksToProcess*)(nextPointPointPtr + nextPointCount);
+
+            using (var players = new NativeArray<Entity>((int)playerCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory))
+            using (var currentPoints = new NativeArray<Entity>((int)currentPointCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory))
+            using (var nextPoints = new NativeArray<Entity>((int)nextPointCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory))
+            {
+                EntityManager.Instantiate(PlayerMachinePrefabEntity, players);
+                EntityManager.Instantiate(CurrentPointPrefabEntity, currentPoints);
+                EntityManager.Instantiate(NextPointPrefabEntity, nextPoints);
+
+                new DeserializeJob<Translation>
+                {
+                    Manager = EntityManager,
+                    Entities = players,
+                    Ptr = playerTranslationPtr,
+                }.Execute();
+                new DeserializeJob<Rotation>
+                {
+                    Manager = EntityManager,
+                    Entities = players,
+                    Ptr = playerRotationPtr,
+                }.Execute();
+                new DeserializeJob<TeamTag>
+                {
+                    Manager = EntityManager,
+                    Entities = players,
+                    Ptr = playerTeamTagPtr,
+                }.Execute();
+                new DeserializeJob<PhysicsVelocity>
+                {
+                    Manager = EntityManager,
+                    Entities = players,
+                    Ptr = playerPhysicsVelocityPtr,
+                }.Execute();
+
+                new DeserializeJob<Translation>
+                {
+                    Manager = EntityManager,
+                    Entities = currentPoints,
+                    Ptr = currentPointTranslationPtr,
+                }.Execute();
+                new DeserializeJob<Point>
+                {
+                    Manager = EntityManager,
+                    Entities = currentPoints,
+                    Ptr = currentPointPointPtr,
+                }.Execute();
+                new DeserializeJob<PhysicsVelocity>
+                {
+                    Manager = EntityManager,
+                    Entities = currentPoints,
+                    Ptr = currentPointPhysicsVelocityPtr,
+                }.Execute();
+
+                new DeserializeJob<Translation>
+                {
+                    Manager = EntityManager,
+                    Entities = nextPoints,
+                    Ptr = nextPointTranslationPtr,
+                }.Execute();
+                new DeserializeJob<Point>
+                {
+                    Manager = EntityManager,
+                    Entities = nextPoints,
+                    Ptr = nextPointPointPtr,
+                }.Execute();
+                new DeserializeJob<DateTimeTicksToProcess>
+                {
+                    Manager = EntityManager,
+                    Entities = nextPoints,
+                    Ptr = nextPointTicksPtr,
+                }.Execute();
+            }
+            UnsafeUtility.Free(outputPtr, Allocator.TempJob);
+        }
+
+        private static byte* Lz4Decode(byte[] serializedBytes, Allocator allocator)
+        {
+            byte* outputPtr;
+            fixed (byte* inputPtr = &serializedBytes[0])
+            {
+                var outputLength = *(int*)inputPtr;
+                outputPtr = (byte*)UnsafeUtility.Malloc(outputLength, 4, allocator);
+                Lz4Codec.Decode(inputPtr + 4, serializedBytes.Length - 4, outputPtr, outputLength);
+            }
+            return outputPtr;
         }
     }
 }

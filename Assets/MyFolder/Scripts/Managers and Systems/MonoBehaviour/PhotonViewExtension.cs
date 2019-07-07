@@ -1,23 +1,26 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using Assets.MyFolder.Scripts.Basics;
-using Assets.MyFolder.Scripts.Managers_and_Systems;
 using Assets.MyFolder.Scripts.Utility;
 using Photon.Pun;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.Physics;
 using Unity.Rendering;
 using Unity.Transforms;
 using UnityEngine;
 using Material = UnityEngine.Material;
+using Random = Unity.Mathematics.Random;
 
-public sealed class PhotonViewExtension : PhotonView
+public sealed unsafe class PhotonViewExtension : PhotonView
 {
     public Material PlayerMaterial;
-    public IPrefabStorage Storage;
-    public IInitialDeserializer InitialDeserializer;
+    private IPrefabStorage _prefabStorage;
+    private IInitialDeserializer _initialDeserializer;
     private Entity _nextPointPrefabEntity;
     private Entity _playerEntity;
+    private Entity _playerPrefabEntity;
     private EntityArchetype _moveCommandComponentTypes;
     private EntityArchetype _synchronizePositionComponentTypes;
 
@@ -42,10 +45,15 @@ public sealed class PhotonViewExtension : PhotonView
 
         _synchronizePositionComponentTypes = manager.CreateArchetype(synchronizePositionComponentTypes);
 
-        if (!FindComponentOfInterfaceOrClassHelper.FindComponentOfInterfaceOrClass(out Storage)) throw new KeyNotFoundException();
-        Storage.FindPrefab<PlayerMachineTag>(manager, out var playerPrefabEntity);
-        InstantiatePlayerPrefab(playerPrefabEntity);
-        Storage.FindPrefab<Point, DateTimeTicksToProcess>(manager, out _nextPointPrefabEntity);
+        if (!FindComponentOfInterfaceOrClassHelper.FindComponentOfInterfaceOrClass(out _prefabStorage)) throw new KeyNotFoundException();
+        if (!FindSystemOfInterfaceHelper.FindSystemOfInterface(out _initialDeserializer)) throw new KeyNotFoundException();
+        _prefabStorage.FindPrefab<PlayerMachineTag>(manager, out _playerPrefabEntity);
+        if (IsMine)
+        {
+            InstantiatePlayerPrefab(_playerPrefabEntity);
+            RPC(nameof(SpawnPlayerMachine), RpcTarget.Others);
+        }
+        _prefabStorage.FindPrefab<Point, DateTimeTicksToProcess>(manager, out _nextPointPrefabEntity);
     }
 
     private void OnDestroy()
@@ -70,57 +78,63 @@ public sealed class PhotonViewExtension : PhotonView
         };
         entityManager.SetComponentData(_playerEntity, teamTag);
 
-        if (IsMine)
-        {
-            var tmpRenderer = entityManager.GetSharedComponentData<RenderMesh>(_playerEntity);
-            tmpRenderer.material = PlayerMaterial;
-            entityManager.SetSharedComponentData(_playerEntity, tmpRenderer);
 
-            var idEntity = entityManager.CreateEntity(ComponentType.ReadWrite<UserIdSingleton>());
-            var userIdSingleton = new UserIdSingleton(OwnerActorNr, _playerEntity);
-            entityManager.SetComponentData(idEntity, userIdSingleton);
-        }
+        var tmpRenderer = entityManager.GetSharedComponentData<RenderMesh>(_playerEntity);
+        tmpRenderer.material = PlayerMaterial;
+        entityManager.SetSharedComponentData(_playerEntity, tmpRenderer);
+
+        var idEntity = entityManager.CreateEntity(ComponentType.ReadWrite<UserIdSingleton>());
+        var userIdSingleton = new UserIdSingleton(OwnerActorNr, _playerEntity);
+        entityManager.SetComponentData(idEntity, userIdSingleton);
     }
 
-    internal void OrderMoveCommandInternal(Vector3 deltaVelocity, long ticks, int actorNumber)
+    internal void OrderMoveCommandInternal(byte[] serializedBytes, int actorNumber)
     {
         var entityManager = World.Active.EntityManager;
         var entity = entityManager.CreateEntity(_moveCommandComponentTypes);
-        entityManager.SetComponentData(entity, new MoveCommand()
+        fixed (byte* ptr = &serializedBytes[0])
         {
-            Id = actorNumber,
-            DeltaVelocity = deltaVelocity,
-        });
-        entityManager.SetComponentData(entity, new DateTimeTicksToProcess(ticks));
+            entityManager.SetComponentData(entity, new MoveCommand()
+            {
+                Id = actorNumber,
+                DeltaVelocity = *(float3*)ptr,
+            });
+            entityManager.SetComponentData(entity, *(DateTimeTicksToProcess*)(ptr + sizeof(float3)));
+        }
     }
 
     [PunRPC]
-    internal void OrderMoveCommandInternal(Vector3 deltaVelocity, long ticks, PhotonMessageInfo msgInfo)
-        => OrderMoveCommandInternal(deltaVelocity, ticks, msgInfo.Sender.ActorNumber);
+    internal void OrderMoveCommandInternal(byte[] serializedBytes, PhotonMessageInfo msgInfo)
+    // Vector3 -> 16
+    // long -> 9
+    // byte[4 * 3 + 8] -> 5 + 20 = 25
+        => OrderMoveCommandInternal(serializedBytes, msgInfo.Sender.ActorNumber);
 
-    internal void SyncInternal(Vector3 position, Quaternion rotation, Vector3 linear, Vector3 angular, int actorNumber, int milliseconds)
+    internal void SyncInternal(byte[] serializedBytes, int actorNumber, int milliseconds)
     {
         var entityManager = World.Active?.EntityManager;
         if (entityManager is null) return;
         var entity = entityManager.CreateEntity(_synchronizePositionComponentTypes);
-        var msgInfoSentServerTimestamp = milliseconds;
-        entityManager.SetComponentData(entity, new SyncInfoTag { SentServerTimestamp = msgInfoSentServerTimestamp });
-        entityManager.SetComponentData(entity, new TeamTag { Id = actorNumber });
-        entityManager.SetComponentData(entity, new Translation { Value = position });
-        entityManager.SetComponentData(entity, new Rotation { Value = rotation });
-        entityManager.SetComponentData(entity, new PhysicsVelocity
+        entityManager.SetComponentData(entity, *(SyncInfoTag*)&milliseconds);
+        entityManager.SetComponentData(entity, *(TeamTag*)&actorNumber);
+        fixed (byte* ptr = &serializedBytes[0])
         {
-            Linear = linear,
-            Angular = angular,
-        });
+            entityManager.SetComponentData(entity, *(Translation*)ptr);
+            entityManager.SetComponentData(entity, *(Rotation*)(ptr + sizeof(Translation)));
+            entityManager.SetComponentData(entity, *(PhysicsVelocity*)(ptr + sizeof(Translation) + sizeof(Rotation)));
+        }
     }
 
     [PunRPC]
-    internal void SyncInternal(Vector3 position, Quaternion rotation, Vector3 linear, Vector3 angular, PhotonMessageInfo msgInfo)
-        => SyncInternal(position, rotation, linear, angular, msgInfo.Sender.ActorNumber, msgInfo.SentServerTimestamp);
+    internal void SyncInternal(byte[] serializedBytes, PhotonMessageInfo msgInfo)
+    // Vector3 -> 16
+    // Quaternion -> 20
+    // 16 * 3 + 20 = 68bytes
+    // byte[4*3*3+4*4] -> 5 + 4 * (9 + 4) = 57bytes
+        => SyncInternal(serializedBytes, msgInfo.Sender.ActorNumber, msgInfo.SentServerTimestamp);
 
     [PunRPC]
-    internal unsafe void NextPointsInternal(byte[] binaryBytes)
+    internal void NextPointsInternal(byte[] binaryBytes)
     {
         var count = (binaryBytes.Length - sizeof(long)) / (sizeof(Point) + sizeof(Translation));
         if (count == 0) return;
@@ -146,10 +160,19 @@ public sealed class PhotonViewExtension : PhotonView
     }
 
     [PunRPC]
-    internal unsafe void InitializeEverythingInternal(byte[] serializedBytes)
+    internal void InitializeEverythingInternal(byte[] serializedBytes)
     {
-        InitialDeserializer.Deserialize(serializedBytes);
+        _initialDeserializer.Deserialize(serializedBytes);
     }
 
-
+    public List<int> commands = new List<int>();
+    private readonly int COMMAND_MAX_LEN = 4;
+    [PunRPC]
+    internal void SpawnPlayerMachine(PhotonMessageInfo msgInfo)
+    {
+        commands.AddRange(Enumerable.Repeat(0, 4).Select(_ => UnityEngine.Random.Range(0, COMMAND_MAX_LEN)));
+        var manager = World.Active.EntityManager;
+        var entity = manager.Instantiate(_playerPrefabEntity);
+        manager.SetComponentData(entity, new TeamTag() { Id = msgInfo.Sender.ActorNumber });
+    }
 }

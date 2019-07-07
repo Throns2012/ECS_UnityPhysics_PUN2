@@ -53,3 +53,4 @@ MonoBehaviour:
   InstantiationId: 0
   isRuntimeInstantiated: 0
   PlayerMaterial: {fileID: 2100000, guid: 09a1060338d5b2145902a8fa88d9a229, type: 2}
+  commands: 

@@ -34,5 +34,6 @@ MonoBehaviour:
   - NextPointPointsInternal
   - InitializeEverythingInternal
   - NextPointsInternal
+  - SpawnPlayerMachine
   DisableAutoOpenWizard: 1
   ShowSettings: 1
