@@ -1,5 +1,6 @@
 ﻿using Assets.MyFolder.Scripts.Basics;
 using System.Threading;
+using Photon.Pun;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -16,14 +17,31 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
         private BuildPhysicsWorld _buildPhysicsWorld;
         private StepPhysicsWorld _stepPhysicsWorld;
         private UserPointManager _userPointManager;
+        private Entity _playerEntity;
+        private EntityQuery _query;
+        public PhotonView View;
 
         protected override void OnCreate()
         {
             _buildPhysicsWorld = World.Active.GetOrCreateSystem<BuildPhysicsWorld>();
             _stepPhysicsWorld = World.Active.GetOrCreateSystem<StepPhysicsWorld>();
             _userPointManager = World.Active.GetOrCreateSystem<UserPointManager>();
-            RequireForUpdate(GetEntityQuery(ComponentType.ReadOnly<PlayerMachineTag>()));
+            RequireForUpdate(_query = GetEntityQuery(ComponentType.ReadOnly<PlayerMachineTag>()));
             RequireForUpdate(GetEntityQuery(ComponentType.ReadWrite<DestroyableComponentData>(), ComponentType.ReadOnly<Point>()));
+        }
+
+        protected override void OnStartRunning()
+        {
+            var actor = View.OwnerActorNr;
+            using (var array = _query.ToEntityArray(Allocator.TempJob))
+            {
+                for (var i = 0; i < array.Length; i++)
+                {
+                    if (EntityManager.GetComponentData<TeamTag>(array[i]).Id != actor) continue;
+                    _playerEntity = array[i];
+                    return;
+                }
+            }
         }
 
         [BurstCompile]
@@ -51,17 +69,17 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
 
         protected override unsafe JobHandle OnUpdate(JobHandle inputDeps)
         {
-            new CollisionJob()
+            if (!EntityManager.Exists(_playerEntity)) return inputDeps;
+            return new CollisionJob()
             {
                 DestroyableAccessor = GetComponentDataFromEntity<DestroyableComponentData>(),
                 PointAccessor = GetComponentDataFromEntity<Point>(true),
                 PointPtr = _userPointManager.PointPtr,
-                PlayerEntity = GetSingleton<UserIdSingleton>().UserMachineEntity,
+                PlayerEntity = _playerEntity,
             }.Schedule(
                 _stepPhysicsWorld.Simulation,
                 ref _buildPhysicsWorld.PhysicsWorld,
-                JobHandle.CombineDependencies(_stepPhysicsWorld.FinalSimulationJobHandle, _buildPhysicsWorld.FinalJobHandle)).Complete();
-            return inputDeps;
+                JobHandle.CombineDependencies(_stepPhysicsWorld.FinalSimulationJobHandle, _buildPhysicsWorld.FinalJobHandle, inputDeps));
         }
     }
 }

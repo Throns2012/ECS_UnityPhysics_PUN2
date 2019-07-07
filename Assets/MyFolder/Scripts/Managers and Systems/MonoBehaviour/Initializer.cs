@@ -87,7 +87,11 @@ public class Initializer : MonoBehaviourPunCallbacks, IMoveNotifier, ISynchroniz
         var instantiatedObj = PhotonNetwork.Instantiate("Photon View Directional Light", rand.NextFloat3(new float3(1f, -0.1f, 1f) * -10f, new float3(1, 1, 1) * 10), Quaternion.identity);
         var world = World.Active;
         world.GetExistingSystem<FollowingCameraSystem>().View =
-            world.GetExistingSystem<TicksIntervalSyncSystem>().View =
+        world.GetExistingSystem<TicksIntervalSyncSystem>().View =
+        world.GetExistingSystem<ControlPlayerMachineMoreComplexSystem>().View =
+        world.GetExistingSystem<CollisionDetectionSystemBetweenPlayerAndPoint>().View =
+        world.GetExistingSystem<RespawnSystem>().View =
+        world.GetExistingSystem<FindPlayerEntityHelper>().View =
             _view =
             instantiatedObj.GetComponent<PhotonViewExtension>();
         AmIMaster = PhotonNetwork.MasterClient.ActorNumber == _view.OwnerActorNr;

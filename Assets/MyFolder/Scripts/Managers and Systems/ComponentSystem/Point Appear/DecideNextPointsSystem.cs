@@ -14,7 +14,7 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
     {
         private const long Interval = TicksIntervalHelper.IntervalTicks * 4L;
         private long _nextTicks;
-        private int _appearCount = 256;
+        private int _appearCount = 64;
         private Job job;
         public ref float3 Min => ref job.Min;
         public ref float3 Max => ref job.Max;

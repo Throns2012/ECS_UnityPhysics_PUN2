@@ -9,11 +9,9 @@ using Unity.Mathematics;
 using Unity.Physics;
 using Unity.Rendering;
 using Unity.Transforms;
-using UnityEngine;
 using Material = UnityEngine.Material;
-using Random = Unity.Mathematics.Random;
 
-public sealed unsafe class PhotonViewExtension : PhotonView
+public sealed unsafe class PhotonViewExtension : PhotonView, IPlayerGenerator
 {
     public Material PlayerMaterial;
     private IPrefabStorage _prefabStorage;
@@ -50,7 +48,9 @@ public sealed unsafe class PhotonViewExtension : PhotonView
         _prefabStorage.FindPrefab<PlayerMachineTag>(manager, out _playerPrefabEntity);
         if (IsMine)
         {
-            InstantiatePlayerPrefab(_playerPrefabEntity);
+            var idEntity = manager.CreateEntity(ComponentType.ReadWrite<UserIdSingleton>());
+            var userIdSingleton = new UserIdSingleton(OwnerActorNr);
+            manager.SetComponentData(idEntity, userIdSingleton);
             RPC(nameof(SpawnPlayerMachine), RpcTarget.Others);
         }
         _prefabStorage.FindPrefab<Point, DateTimeTicksToProcess>(manager, out _nextPointPrefabEntity);
@@ -67,25 +67,22 @@ public sealed unsafe class PhotonViewExtension : PhotonView
         });
     }
 
-    private void InstantiatePlayerPrefab(Entity prefab)
+    public Entity PlayerInstantiate(int id)
     {
         var entityManager = World.Active.EntityManager;
-        _playerEntity = entityManager.Instantiate(prefab);
+        _playerEntity = entityManager.Instantiate(_playerPrefabEntity);
 
         var teamTag = new TeamTag()
         {
-            Id = OwnerActorNr,
+            Id = id,
         };
         entityManager.SetComponentData(_playerEntity, teamTag);
-
 
         var tmpRenderer = entityManager.GetSharedComponentData<RenderMesh>(_playerEntity);
         tmpRenderer.material = PlayerMaterial;
         entityManager.SetSharedComponentData(_playerEntity, tmpRenderer);
 
-        var idEntity = entityManager.CreateEntity(ComponentType.ReadWrite<UserIdSingleton>());
-        var userIdSingleton = new UserIdSingleton(OwnerActorNr, _playerEntity);
-        entityManager.SetComponentData(idEntity, userIdSingleton);
+        return _playerEntity;
     }
 
     internal void OrderMoveCommandInternal(byte[] serializedBytes, int actorNumber)

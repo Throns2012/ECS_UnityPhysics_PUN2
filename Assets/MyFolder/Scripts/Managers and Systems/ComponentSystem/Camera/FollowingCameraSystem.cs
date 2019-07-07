@@ -31,27 +31,24 @@ namespace Assets.MyFolder.Scripts.Managers_and_Systems
         public PhotonView View;
         private float _distance;
 
+        private FindPlayerEntityHelper _findPlayerEntityHelper;
+
         protected override void OnCreate()
         {
             RequireForUpdate(_query = GetEntityQuery(ComponentType.ReadOnly<Translation>(), ComponentType.ReadOnly<PlayerMachineTag>(), ComponentType.ReadOnly<TeamTag>()));
             RequireSingletonForUpdate<FollowingCameraControlSingleton>();
+            _findPlayerEntityHelper = World.Active.GetOrCreateSystem<FindPlayerEntityHelper>();
         }
 
         protected override void OnStartRunning()
         {
-            _cameraTargetEntity = Entity.Null;
-            using (var entities = _query.ToEntityArray(Allocator.TempJob))
-            {
-                foreach (var entity in entities)
-                {
-                    if (EntityManager.GetComponentData<TeamTag>(entity).Id != View.OwnerActorNr) continue;
-                    _cameraTargetEntity = entity;
-                }
-            }
+            _cameraTargetEntity = _findPlayerEntityHelper.Find();
             if (_cameraTargetEntity == Entity.Null) return;
             _distance = math.distance(EntityManager.GetComponentData<Translation>(_cameraTargetEntity).Value, _mainCameraTransform.position);
             if (_distance < BandWidth * 2f)
                 _distance = BandWidth * 2f;
+            if (_distance > BandWidth * 10f)
+                _distance = BandWidth * 5f;
         }
 
         protected override void OnUpdate()
